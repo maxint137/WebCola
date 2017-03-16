@@ -1,6 +1,7 @@
 ///<reference path="qunit.d.ts"/>
 
-import * as cola from '../index'
+import * as QUnit from 'qunitjs';
+import * as cola from '../index';
 
 QUnit.module("Headless API");
 test('strongly connected components', () => {
@@ -71,6 +72,48 @@ test("Layout events",() => {
     equal(starts, 1, 'started once');
     ok(ticks >= 1 && ticks < 50, `ticked ${ticks} times`);
     equal(ends, 1, 'ended once');
+});
+
+test("Stable alignment constraint", () => {
+    // layout a pair of connected nodes on a y alignment constraint
+    // test:
+    //  - alignment constraint works
+    //  - non-overlap constraint
+    //  - layout does not drift after multiple calls to start
+    const nodeSize = 20, threshold = 0.01;
+    let starts = 0, ticks = 0, ends = 0,
+        layout = new cola.Layout()
+        .handleDisconnected(false) // handle disconnected repacks the components which would hide any drift
+        .linkDistance(1) // minimal link distance means nodes would overlap if not for...
+        .avoidOverlaps(true) // force non-overlap
+        .links([{ source: 0, target: 1 }])
+        .constraints([{ type: "alignment", axis: "y",
+            offsets: [
+                { node: 0, offset: 0 },
+                { node: 1, offset: 0 },
+            ]
+        }])
+        .on(cola.EventType.start, e => starts++)
+        .on(cola.EventType.tick, e => ticks++)
+        .on(cola.EventType.end, e => ends++);
+    layout.nodes().forEach(v=>v.width = v.height = nodeSize) // square nodes
+    layout.start(); // first layout
+
+    ok(layout.alpha() <= layout.convergenceThreshold(), 'converged to alpha=' + layout.alpha());
+    equal(starts, 1, 'started once');
+    ok(ticks >= 1 && ticks < 50, `ticked ${ticks} times`);
+    equal(ends, 1, 'ended once');
+    const coords = layout.nodes().map(v => <any>{x:v.x, y:v.y});
+    const dx = Math.abs(Math.abs(coords[0].x - coords[1].x) - nodeSize);
+    ok(dx < threshold, `node overlap = ${dx}`);
+    const dy = Math.abs(coords[0].y - coords[1].y);
+    ok(dy < threshold, "y coords equal");
+
+    layout.start(); // relayout!
+    equal(starts, 2, 'started twice');
+    const coords2 = layout.nodes().map(v => <any>{x:v.x, y:v.y});
+    const xdrift = Math.abs(coords2[0].x - coords[0].x);
+    ok(xdrift < threshold, "layout stable between calls to start");
 });
 
 QUnit.module("3D Layout");
